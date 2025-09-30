@@ -1,12 +1,12 @@
 # Local Perplexity-like RAG Search Engine
 
-A production-ready implementation of a Perplexity-style search engine using n8n as the orchestrator, with support for both local (Ollama) and remote (OpenRouter) LLMs, web search APIs, and content extraction services.
+A production-ready implementation of a Perplexity-style search engine with a dual-runner architecture. The Python runner is now the primary implementation, with n8n available as an alternative workflow orchestrator.
 
 ## Features
 
 - Real-time web answers with citations
 - Fast, reliable, deterministic JSON outputs
-- Local-first architecture with n8n orchestration
+- Dual-runner architecture (Python + n8n)
 - Modular pipeline with replaceable search and scrape backends
 - Built-in caching, retries, rate-limiting, and deduplication
 - Safety measures and attribution
@@ -14,7 +14,7 @@ A production-ready implementation of a Perplexity-style search engine using n8n 
 ## Architecture Overview
 
 ```
-[Client/UI/Webhook] → n8n (Workflow Orchestrator)
+[Client/UI/Webhook] → Python Runner or n8n
   ├─ Query Normalizer (LLM optional)
   ├─ Search API (Tavily/Brave/SearchAPI)
   ├─ URL Dedup + Ranking
@@ -69,28 +69,19 @@ A production-ready implementation of a Perplexity-style search engine using n8n 
    docker exec -it perplexity-engine-ollama-1 ollama pull qwen2.5:14b-instruct
    ```
 
-5. **Import and configure the n8n workflow**
-   - Open n8n at http://localhost:5678
-   - If this is your first time, use the default credentials (admin/admin) to log in
-   - Click on "Workflows" in the left sidebar
-   - Click the "+" button to create a new workflow
-   - Click on the workflow name at the top to rename it to "Local Perplexity RAG"
-   - Click on the "Workflow" menu (three dots) and select "Import from File"
-   - Select the file `n8n/workflows/local_perplexity_rag.json`
-   - Follow our detailed [Step-by-Step Credentials Configuration Guide](CREDENTIALS_GUIDE.md) to properly configure all credentials
-   - Click the "Activate" toggle to activate the workflow
-
-6. **Access the reference UI**
+5. **Access the reference UI**
    Open `ui/index.html` in a web browser or serve it with a web server.
 
 ## Usage
 
+The Python runner is now the default and recommended approach. You can use either the API or CLI interfaces.
+
 ### API Endpoint
 
-Send a POST request to the n8n webhook endpoint:
+Send a POST request to the Python API endpoint:
 
 ```
-POST http://localhost:5678/webhook/api/search
+POST http://localhost:8080/api/search
 ```
 
 Example payload:
@@ -106,6 +97,19 @@ Example payload:
   "excludeDomains": ["reddit.com"],
   "ui": { "mode": "concise" }
 }
+```
+
+### CLI Usage
+
+```bash
+# Install dependencies
+pip install -e .
+
+# Run a search
+python -m apps.cli run "What is the latest in AI research?"
+
+# Start the API server
+python -m apps.cli serve
 ```
 
 ### Expected Response
@@ -124,26 +128,25 @@ Example payload:
     }
   ],
   "diagnostics": {
-    "searchProvider": "tavily",
-    "llm": "anthropic/claude-3.5-sonnet@openrouter",
+    "searchProvider": "brave",
+    "llm": "x-ai/grok-4-fast:free",
     "latencyMs": 2380,
     "cached": false,
-    "tokens": {"prompt": 4200, "completion": 350}
+    "tokens": null
   }
 }
 ```
 
-## Dual-Runner Architecture (Python Runner)
+## Dual-Runner Architecture
 
-This project now includes a Python-based runner that provides the same functionality as the n8n workflow but with a more traditional code-based approach. Both runners share the same data contracts, caching, and persistence layers.
+This project implements a dual-runner architecture where you can choose between:
 
-### Python Runner Components
+1. **Python Runner (Default)**: Code-based implementation with FastAPI and CLI interfaces
+2. **n8n Runner**: Visual workflow-based implementation
 
-- **API**: FastAPI application (port 8080)
-- **CLI**: Command-line interface
-- **Core**: Modular pipeline components
+Both runners share the same data contracts, caching, and persistence layers.
 
-### Running the Python Runner
+### Python Runner (Recommended)
 
 #### Using Docker (Recommended)
 
@@ -179,6 +182,26 @@ curl -X POST http://localhost:8080/api/search \
     "timeRange": "30d"
   }'
 ```
+
+### n8n Runner (Alternative)
+
+If you prefer to use the n8n workflow:
+
+1. **Import and configure the n8n workflow**
+   - Open n8n at http://localhost:5678
+   - If this is your first time, use the default credentials (admin/admin) to log in
+   - Click on "Workflows" in the left sidebar
+   - Click the "+" button to create a new workflow
+   - Click on the workflow name at the top to rename it to "Local Perplexity RAG"
+   - Click on the "Workflow" menu (three dots) and select "Import from File"
+   - Select the file `n8n/workflows/local_perplexity_rag.json`
+   - Follow our detailed [Step-by-Step Credentials Configuration Guide](CREDENTIALS_GUIDE.md) to properly configure all credentials
+   - Click the "Activate" toggle to activate the workflow
+
+2. **Use the n8n API endpoint**
+   ```
+   POST http://localhost:5678/webhook/api/search
+   ```
 
 ### Project Structure
 
@@ -271,21 +294,10 @@ See our detailed [Troubleshooting Guide](TROUBLESHOOTING.md) for solutions to co
 For environment variable specific issues, see our [Environment Variable Troubleshooting Guide](ENV_TROUBLESHOOTING.md).
 
 Quick troubleshooting steps:
-- If n8n fails to start, check that all environment variables are properly set
+- Check that all environment variables are properly set
 - For Ollama issues, ensure the model is pulled and the service is accessible
 - For search API errors, verify your API keys and quota limits
-- If you get a 404 error when testing, ensure the workflow is imported and activated in n8n
-- Check the n8n logs with: `docker-compose logs n8n`
-
-## Current Limitations
-
-Due to environment variable access issues in the current n8n setup:
-
-1. **Cache Lookup**: The cache lookup functionality has been temporarily disabled and replaced with a pass-through function
-2. **Environment Variables**: Environment variables are not accessible within n8n workflows
-3. **Workaround**: See the [Credentials Guide](CREDENTIALS_GUIDE.md) for details on the implemented workaround
-
-These limitations will be resolved once the environment variable access issue is fixed.
+- Check the service logs with: `docker-compose logs`
 
 ## License
 
