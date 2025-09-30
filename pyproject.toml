@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "perplexity-engine"
+version = "1.0.0"
+description = "Local Perplexity-style RAG search engine"
+readme = "README.md"
+authors = [{name = "AI Coder", email = "ai.coder@example.com"}]
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "requests>=2.28.0",
+    "python-dotenv>=0.19.0",
+    "redis>=4.5.0",
+    "fastapi>=0.68.0",
+    "uvicorn>=0.15.0",
+    "httpx>=0.23.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "typer>=0.4.0",
+    "beautifulsoup4>=4.11.0",
+    "tenacity>=8.0.0",
+]
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.2.0",
+    "pytest-asyncio>=0.18.0",
+    "respx>=0.20.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+]
+
+[project.scripts]
+perplexity = "apps.cli.__main__:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["perplexity_core*", "apps*"]
+
+[tool.setuptools.package-data]
+perplexity_core = ["py.typed"]

@@ -1,0 +1,24 @@
+{
+  "settings": {
+    "executionTimeout": 300,
+    "maxExecutionTimeout": 300,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "timezone": "America/New_York"
+  },
+  "nodes": {
+    "defaultVersion": 1
+  },
+  "versionNotifications": {
+    "enabled": true,
+    "endpoint": "https://api.n8n.io/versions/"
+  },
+  "templates": {
+    "enabled": true,
+    "host": "https://api.n8n.io/"
+  },
+  "credentials": {
+    "defaultVersion": 1
+  }
+}
