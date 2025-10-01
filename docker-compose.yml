@@ -57,11 +57,12 @@ services:
       - RUNNER=python
       - REDIS_HOST=redis
       - POSTGRES_HOST=postgres
-      - OLLAMA_HOST=http://ollama:11434
     ports: ["8080:8080"]
-    depends_on: [postgres, redis, ollama]
+    depends_on: [postgres, redis]
     volumes:
       - .:/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   web:
     build:

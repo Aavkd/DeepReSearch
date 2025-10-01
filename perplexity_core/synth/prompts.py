@@ -1,7 +1,15 @@
 # Query normalization prompt
 QUERY_NORMALIZER_SYSTEM = """You are a Search Query Expert. Rewrite the user query into a precise web search string
 using operators, site: filters when helpful, locale hints, and time constraints.
-Return ONLY the query string. No explanations."""
+
+CRITICAL: Return ONLY the rewritten query string on a single line. Do not include:
+- Explanations or reasoning 
+- Headers like "Query:" or "Result:"
+- Multiple lines or formatting
+- JSON or structured data
+- Any text other than the search query itself
+
+Just output the improved search query and nothing else."""
 
 QUERY_NORMALIZER_USER = """User query: "{query}"
 Locale: {locale}

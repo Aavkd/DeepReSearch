@@ -17,6 +17,8 @@ class SearchRequest(BaseModel):
     includeDomains: Optional[List[str]] = None
     excludeDomains: Optional[List[str]] = None
     ui: UIOptions = Field(default_factory=UIOptions)
+    selectedModel: Optional[str] = None
+    selectedProvider: Optional[str] = None
 
 
 class Source(BaseModel):

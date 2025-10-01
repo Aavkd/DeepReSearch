@@ -18,7 +18,7 @@ from ..synth.prompts import SYNTHESIS_USER, SAFETY_GUARD_SYSTEM
 from ..synth.composer import compose_synthesis_prompt, compose_query_normalization_prompt
 from ..synth.repair import ensure_json
 from ..safety.guard import apply_safety_guard
-from ..util.text import clean_text
+from ..util.text import clean_text, clean_query_response
 
 
 class Pipeline:
@@ -31,6 +31,25 @@ class Pipeline:
         self.firecrawl = FirecrawlExtractor()
         self.readability = ReadabilityExtractor()
         print("Pipeline initialized with Firecrawl and Readability extractors")
+    
+    def _get_llm_provider(self, req: SearchRequest):
+        """
+        Get the appropriate LLM provider based on the request settings.
+        """
+        # Check if a specific model and provider are selected
+        if req.selectedModel and req.selectedProvider:
+            if req.selectedProvider == "ollama":
+                return OllamaProvider(model=req.selectedModel)
+            elif req.selectedProvider == "openrouter":
+                return OpenRouterProvider(model=req.selectedModel)
+        
+        # Fall back to forceLocal logic
+        if req.forceLocal:
+            selected_model = req.selectedModel if req.selectedProvider == "ollama" else None
+            return OllamaProvider(model=selected_model)
+        else:
+            selected_model = req.selectedModel if req.selectedProvider == "openrouter" else None
+            return OpenRouterProvider(model=selected_model)
     
     async def run(self, req: SearchRequest) -> SearchResponse:
         """
@@ -89,7 +108,7 @@ class Pipeline:
         # 6. Synthesize answer
         print("Step 6: Synthesizing answer...")
         synthesis_payload = compose_synthesis_prompt(req, extracted_docs)
-        raw_response = await self._synthesize(synthesis_payload)
+        raw_response = await self._synthesize(synthesis_payload, req)
         print("Synthesis completed, repairing JSON...")
         repaired_response = await ensure_json(raw_response)
         print("JSON repair completed")
@@ -139,13 +158,10 @@ class Pipeline:
         """
         print("Normalizing query...")
         try:
-            # Use OpenRouter for normalization (or Ollama if forced local)
-            if req.forceLocal:
-                provider = OllamaProvider()
-                print("Using Ollama for query normalization")
-            else:
-                provider = OpenRouterProvider()
-                print("Using OpenRouter for query normalization")
+            # Use selected provider/model or fall back to forceLocal logic
+            provider = self._get_llm_provider(req)
+            provider_name = "Ollama" if isinstance(provider, OllamaProvider) else "OpenRouter"
+            print(f"Using {provider_name} ({provider.model}) for query normalization")
             
             prompt_data = compose_query_normalization_prompt(req)
             user_prompt = QUERY_NORMALIZER_USER.format(**prompt_data)
@@ -156,9 +172,25 @@ class Pipeline:
                 temperature=0.2
             )
             
-            cleaned = clean_text(normalized)
+            # Use specialized cleaning for query responses
+            cleaned = clean_query_response(normalized)
+            
+            # Validate the cleaned result
+            if not cleaned or len(cleaned.strip()) < 3:
+                print(f"Normalization produced invalid result: '{cleaned}', using original query")
+                return None
+            
+            # Don't use normalization if it's identical to original (likely failed)
+            if cleaned.lower().strip() == req.query.lower().strip():
+                print("Normalization returned identical query, skipping")
+                return None
+                
             print(f"Query normalized to: {cleaned}")
             return cleaned
+        except json.JSONDecodeError as e:
+            print(f"Query normalization failed due to JSON parsing error: {e}")
+            print("This might be due to the model returning structured data instead of plain text")
+            return None
         except Exception as e:
             print(f"Query normalization failed: {e}")
             # If normalization fails, return None to use original query
@@ -269,7 +301,7 @@ class Pipeline:
         print(f"Total documents extracted: {len(docs)}")
         return docs
     
-    async def _synthesize(self, payload: Dict[str, str]) -> str:
+    async def _synthesize(self, payload: Dict[str, str], req: SearchRequest) -> str:
         """
         Synthesize the final answer using an LLM.
         """
@@ -279,13 +311,10 @@ class Pipeline:
             docs_json=payload["docs_json"]
         )
         
-        # Use OpenRouter (or Ollama if forced local)
-        if payload.get("style_hints") == "local" or "forceLocal" in payload:
-            provider = OllamaProvider()
-            print("Using Ollama for synthesis")
-        else:
-            provider = OpenRouterProvider()
-            print("Using OpenRouter for synthesis")
+        # Use selected provider/model or fall back to forceLocal logic  
+        provider = self._get_llm_provider(req)
+        provider_name = "Ollama" if isinstance(provider, OllamaProvider) else "OpenRouter"
+        print(f"Using {provider_name} ({provider.model}) for synthesis")
         
         response = await provider.chat(
             SYNTHESIS_SYSTEM,
