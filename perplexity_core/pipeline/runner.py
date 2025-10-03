@@ -134,7 +134,7 @@ class Pipeline:
                 bullets=safe_response.get("bullets", []),
                 sources=safe_response.get("sources", []),
                 diagnostics=diagnostics,
-                structured=safe_response.get("structured", {})
+                structured=safe_response  # The entire safe_response is the structured content
             )
         else:
             # Default answer mode
