@@ -10,6 +10,9 @@ from perplexity_core.contracts import SearchRequest, SearchResponse
 from perplexity_core.pipeline.runner import Pipeline
 from perplexity_core.config import settings
 
+# Import the new discover router
+from .routes_discover import router as discover_router
+
 app = FastAPI(
     title="Local Perplexity API",
     description="AI-powered search engine with citation capabilities",
@@ -24,6 +27,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include the discover router
+app.include_router(discover_router)
 
 # Global pipeline instance
 pipeline = Pipeline()
@@ -41,6 +47,7 @@ async def health():
 async def search(req: SearchRequest):
     """
     Perform a search and return a synthesized answer with citations.
+    Supports structured content generation when output_type is specified.
     """
     try:
         response = await pipeline.run(req)

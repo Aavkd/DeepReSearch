@@ -10,6 +10,8 @@ A production-ready implementation of a Perplexity-style search engine with a dua
 - Modular pipeline with replaceable search and scrape backends
 - Built-in caching, retries, rate-limiting, and deduplication
 - Safety measures and attribution
+- **Structured Content Generation** (NotebookLM-style Studio Panel)
+- **Discover Sources** feature for research planning
 
 ## Architecture Overview
 
@@ -53,6 +55,7 @@ A production-ready implementation of a Perplexity-style search engine with a dua
    - Firecrawl API key
    - OpenRouter API key (if using remote LLMs)
    - Configure Ollama settings if using local LLMs
+   - Set `STRUCTURED_ENABLED=true` and `DISCOVER_ENABLED=true` to enable new features
    
    You can verify your environment variables are set correctly:
    ```bash
@@ -96,6 +99,85 @@ Example payload:
   "includeDomains": ["nasa.gov", "esa.int"],
   "excludeDomains": ["reddit.com"],
   "ui": { "mode": "concise" }
+}
+```
+
+### Structured Content Generation
+
+The search endpoint now supports structured content generation with the `output_type` parameter:
+
+```json
+{
+  "query": "Quantum sensing advances since 2023",
+  "maxResults": 6,
+  "timeRange": "365d",
+  "output_type": "briefing_doc",
+  "strict": true,
+  "forceLocal": false
+}
+```
+
+Supported output types:
+- `answer` (default)
+- `faq`
+- `study_guide`
+- `briefing_doc`
+- `timeline`
+- `mind_map`
+
+When `output_type` is specified, the response includes a `structured` field with the generated content:
+
+```json
+{
+  "answer": "One-paragraph overview.",
+  "bullets": ["…", "…"],
+  "sources": [{ "title": "...", "url": "...", "published": "2025-09-15", "snippet": "...", "relevance": 0.92 }],
+  "structured": {
+    "type": "briefing_doc",
+    "version": "1.0",
+    "sections": [
+      {"heading": "Executive Summary", "content_md": "…"},
+      {"heading": "Key Developments", "items": ["…", "…"]},
+      {"heading": "Risks & Open Questions", "items": ["…"]}
+    ]
+  },
+  "diagnostics": { "searchProvider": "brave", "llm": "…", "latencyMs": 0, "cached": false }
+}
+```
+
+### Discover Sources Endpoint
+
+A new endpoint helps discover and curate authoritative sources for research topics:
+
+```
+POST http://localhost:8080/api/discover
+```
+
+Example payload:
+```json
+{
+  "topic": "Impacts of CRISPR in agriculture",
+  "maxSources": 10,
+  "timeRange": "365d",
+  "locale": "en"
+}
+```
+
+Response:
+```json
+{
+  "recommendations": [
+    {
+      "title": "...",
+      "url": "...",
+      "why_md": "Why this matters",
+      "summary_md": "2–4 sentence annotated summary",
+      "published": "2025-07-01",
+      "score": 0.0
+    }
+  ],
+  "queries_planned": ["...", "..."],
+  "diagnostics": { "searchProvider": "tavily", "llm": "…", "latencyMs": 0 }
 }
 ```
 
@@ -173,6 +255,7 @@ python -m apps.cli serve
 #### Using Direct API Calls
 
 ```bash
+# Standard search
 curl -X POST http://localhost:8080/api/search \
   -H "Content-Type: application/json" \
   -d '{
@@ -181,6 +264,25 @@ curl -X POST http://localhost:8080/api/search \
     "locale": "en",
     "timeRange": "30d"
   }'
+
+# Structured content generation
+curl -X POST http://localhost:8080/api/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Status of Artemis II crewed mission delays and risks",
+    "timeRange": "365d",
+    "maxResults": 6,
+    "output_type": "briefing_doc"
+  }' | jq .
+
+# Discover sources
+curl -X POST http://localhost:8080/api/discover \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topic": "AI in healthcare diagnostics post-2023",
+    "maxSources": 10,
+    "timeRange": "730d"
+  }' | jq .
 ```
 
 ### n8n Runner (Alternative)
@@ -197,108 +299,3 @@ If you prefer to use the n8n workflow:
    - Select the file `n8n/workflows/local_perplexity_rag.json`
    - Follow our detailed [Step-by-Step Credentials Configuration Guide](CREDENTIALS_GUIDE.md) to properly configure all credentials
    - Click the "Activate" toggle to activate the workflow
-
-2. **Use the n8n API endpoint**
-   ```
-   POST http://localhost:5678/webhook/api/search
-   ```
-
-### Project Structure
-
-```
-.
-├── apps/
-│   ├── api/           # FastAPI application
-│   └── cli/           # Command-line interface
-├── perplexity_core/   # Core pipeline components
-│   ├── cache/         # Redis caching
-│   ├── search/        # Search providers
-│   ├── extract/       # Content extraction
-│   ├── rank/          # Ranking and deduplication
-│   ├── llm/           # LLM providers
-│   ├── synth/         # Synthesis and prompts
-│   ├── safety/        # Safety guard
-│   ├── pipeline/      # Main orchestrator
-│   ├── util/          # Utility functions
-│   ├── store/         # Persistence
-│   ├── config.py      # Configuration
-│   ├── contracts.py   # Data contracts
-│   └── hashing.py     # Cache key generation
-├── n8n/               # n8n workflow
-├── docker/            # Docker files
-├── ui/                # Reference UI
-├── .env.example       # Environment example
-├── docker-compose.yml # Service orchestration
-├── requirements.txt   # Python dependencies
-└── pyproject.toml     # Package configuration
-```
-
-## Testing
-
-We provide several test scripts to help you verify your setup:
-
-1. **Environment Variables Test**:
-   - `check_host_env.py` - Check if environment variables are accessible from the host
-   - `test_env_vars.py` - Test if n8n can access environment variables
-   - `test_env_vars.ps1` - PowerShell version of the same test
-
-2. **Service Connectivity Test**:
-   - `test_redis.py` - Test Redis connectivity
-   - `test_redis.ps1` - PowerShell version of Redis test
-
-3. **Workflow Test**:
-   - `test_search.py` - Test the complete search workflow
-   - `test_webhook.ps1` - PowerShell version of the search test
-   - `test_n8n_webhook.py` - Direct test of n8n webhooks
-   - `test_cache_fix.py` - Test the cache fix implementation
-   - `test_cache_fix.ps1` - PowerShell version of cache fix test
-
-4. **Test Workflows**:
-   - `test_n8n_env.json` - Test environment variable access in n8n
-   - `test_http_env.json` - Test HTTP Request node environment variable usage
-   - `debug_env_vars.json` - Debug environment variable access issues
-   - `test_http_env_vars.json` - Test HTTP environment variables
-   - `comprehensive_env_test.json` - Comprehensive environment variable test
-   - `test_cache_fix.json` - Test the cache fix implementation
-
-## Customization
-
-### Switching Between Search Providers
-
-The workflow supports multiple search providers. Configure your preferred provider by setting the appropriate API key in the `.env` file.
-
-### Using Local LLMs
-
-To use Ollama for local inference:
-1. Ensure Ollama is running (via Docker in this setup)
-2. Pull your preferred model: `ollama pull qwen2.5:14b-instruct`
-3. Set `OLLAMA_HOST` and `OLLAMA_MODEL` in `.env`
-
-### Using Remote LLMs
-
-To use OpenRouter for remote inference:
-1. Set `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` in `.env`
-
-## Extending the System
-
-The modular architecture allows for easy extensions:
-
-1. **Vector RAG**: Add vector storage (pgvector) for enhanced retrieval
-2. **Multi-Agent Planning**: Add decision-making steps for complex queries
-3. **Summarize-then-Read**: Implement hierarchical processing for long documents
-
-## Troubleshooting
-
-See our detailed [Troubleshooting Guide](TROUBLESHOOTING.md) for solutions to common issues.
-
-For environment variable specific issues, see our [Environment Variable Troubleshooting Guide](ENV_TROUBLESHOOTING.md).
-
-Quick troubleshooting steps:
-- Check that all environment variables are properly set
-- For Ollama issues, ensure the model is pulled and the service is accessible
-- For search API errors, verify your API keys and quota limits
-- Check the service logs with: `docker-compose logs`
-
-## License
-
-This project is open-source and available under the MIT License.

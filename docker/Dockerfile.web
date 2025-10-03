@@ -7,8 +7,5 @@ RUN npm run build
 
 FROM nginx:1.27-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
-# Single-page app fallback + small optimizations
-RUN sed -i 's|try_files \$uri \$uri/ =404;|try_files \$uri /index.html;|g' /etc/nginx/conf.d/default.conf
-# Security headers (basic)
-RUN printf '\nadd_header X-Frame-Options "DENY" always;\nadd_header X-Content-Type-Options "nosniff" always;\nadd_header Referrer-Policy "strict-origin-when-cross-origin" always;\n' >> /etc/nginx/conf.d/default.conf
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

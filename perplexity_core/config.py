@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     REQUEST_TIMEOUT_S: int = 20
     CACHE_TTL_S: int = 3600  # 1 hour default
     
+    # Structured content generation and discover sources
+    STRUCTURED_ENABLED: bool = True
+    DISCOVER_ENABLED: bool = True
+    STRUCTURED_MAX_TOKENS: int = 2000
+    DISCOVER_MAX_SOURCES: int = 10
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

@@ -17,6 +17,7 @@ from ..synth.prompts import QUERY_NORMALIZER_SYSTEM, QUERY_NORMALIZER_USER, SYNT
 from ..synth.prompts import SYNTHESIS_USER, SAFETY_GUARD_SYSTEM
 from ..synth.composer import compose_synthesis_prompt, compose_query_normalization_prompt
 from ..synth.repair import ensure_json
+from ..synth.structured_prompt import compose_structured_prompt, get_structured_prompts
 from ..safety.guard import apply_safety_guard
 from ..util.text import clean_text, clean_query_response
 
@@ -107,37 +108,64 @@ class Pipeline:
         
         # 6. Synthesize answer
         print("Step 6: Synthesizing answer...")
-        synthesis_payload = compose_synthesis_prompt(req, extracted_docs)
-        raw_response = await self._synthesize(synthesis_payload, req)
-        print("Synthesis completed, repairing JSON...")
-        repaired_response = await ensure_json(raw_response)
-        print("JSON repair completed")
+        if req.output_type and settings.STRUCTURED_ENABLED:
+            # Structured content generation
+            structured_payload = compose_structured_prompt(req.output_type, req.query, extracted_docs)
+            raw_response = await self._synthesize_structured(structured_payload, req)
+            print("Structured synthesis completed, repairing JSON...")
+            repaired_response = await ensure_json(raw_response)
+            print("JSON repair completed")
+            
+            # Apply safety guard to structured content
+            safe_response = apply_safety_guard(repaired_response)
+            print("Safety guard applied")
+            
+            # Create diagnostics
+            diagnostics = Diagnostics(
+                searchProvider="brave",  # Default to brave since it's configured
+                llm=settings.OPENROUTER_MODEL if not req.forceLocal else settings.OLLAMA_MODEL,
+                latencyMs=int((time.time() - start_time) * 1000),
+                cached=False
+            )
+            
+            # Create final response with structured content
+            response = SearchResponse(
+                answer=safe_response.get("answer", ""),
+                bullets=safe_response.get("bullets", []),
+                sources=safe_response.get("sources", []),
+                diagnostics=diagnostics,
+                structured=safe_response.get("structured", {})
+            )
+        else:
+            # Default answer mode
+            synthesis_payload = compose_synthesis_prompt(req, extracted_docs)
+            raw_response = await self._synthesize(synthesis_payload, req)
+            print("Synthesis completed, repairing JSON...")
+            repaired_response = await ensure_json(raw_response)
+            print("JSON repair completed")
+            
+            # Apply safety guard
+            safe_response = apply_safety_guard(repaired_response)
+            print("Safety guard applied")
+            
+            # Create diagnostics
+            diagnostics = Diagnostics(
+                searchProvider="brave",  # Default to brave since it's configured
+                llm=settings.OPENROUTER_MODEL if not req.forceLocal else settings.OLLAMA_MODEL,
+                latencyMs=int((time.time() - start_time) * 1000),
+                cached=False
+            )
+            
+            # Create final response
+            response = SearchResponse(
+                answer=safe_response.get("answer", ""),
+                bullets=safe_response.get("bullets", []),
+                sources=safe_response.get("sources", []),
+                diagnostics=diagnostics
+            )
         
-        # 7. Apply safety guard
-        print("Step 7: Applying safety guard...")
-        safe_response = apply_safety_guard(repaired_response)
-        print("Safety guard applied")
-        
-        # 8. Create diagnostics
-        print("Step 8: Creating diagnostics...")
-        diagnostics = Diagnostics(
-            searchProvider="brave",  # Default to brave since it's configured
-            llm=settings.OPENROUTER_MODEL if not req.forceLocal else settings.OLLAMA_MODEL,
-            latencyMs=int((time.time() - start_time) * 1000),
-            cached=False
-        )
-        
-        # 9. Create final response
-        print("Step 9: Creating final response...")
-        response = SearchResponse(
-            answer=safe_response.get("answer", ""),
-            bullets=safe_response.get("bullets", []),
-            sources=safe_response.get("sources", []),
-            diagnostics=diagnostics
-        )
-        
-        # 10. Cache result
-        print("Step 10: Caching result...")
+        # 7. Cache result
+        print("Step 7: Caching result...")
         try:
             await self.cache.set(
                 cache_key, 
@@ -324,4 +352,38 @@ class Pipeline:
         )
         
         print("Synthesis completed successfully")
+        return response
+    
+    async def _synthesize_structured(self, payload: Dict[str, str], req: SearchRequest) -> str:
+        """
+        Synthesize structured content using an LLM.
+        """
+        print(f"Synthesizing structured content of type: {req.output_type}")
+        
+        # Use selected provider/model or fall back to forceLocal logic  
+        provider = self._get_llm_provider(req)
+        provider_name = "Ollama" if isinstance(provider, OllamaProvider) else "OpenRouter"
+        print(f"Using {provider_name} ({provider.model}) for structured synthesis")
+        
+        # Add JSON response format for providers that support it
+        kwargs = {
+            "temperature": 0.2,
+            "top_p": 0.9,
+            "max_tokens": settings.STRUCTURED_MAX_TOKENS
+        }
+        
+        # Try to use JSON mode if the provider supports it
+        if isinstance(provider, OpenRouterProvider):
+            kwargs["response_format"] = {"type": "json_object"}
+        elif isinstance(provider, OllamaProvider):
+            # Ollama doesn't have a specific JSON mode, but we can request it
+            pass
+        
+        response = await provider.chat(
+            payload["system_prompt"],
+            payload["user_prompt"],
+            **kwargs
+        )
+        
+        print("Structured synthesis completed successfully")
         return response

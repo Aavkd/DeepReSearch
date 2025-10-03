@@ -37,9 +37,13 @@ class OpenRouterProvider(LLMProvider):
             ]
         }
         
+        # Add JSON response format if specified
+        if "response_format" in kwargs:
+            payload["response_format"] = kwargs["response_format"]
+        
         # Add any additional parameters
         for key, value in kwargs.items():
-            if key not in ["temperature", "top_p", "max_tokens"]:
+            if key not in ["temperature", "top_p", "max_tokens", "response_format"]:
                 payload[key] = value
         
         try:
